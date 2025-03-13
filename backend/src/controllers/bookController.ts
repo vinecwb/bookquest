@@ -3,7 +3,7 @@ import prisma from "../config/prisma";
 import { fetchBookRecommendations } from "../services/bookService";
 
 const getUserInterests = async (userId: string) => {
-  return await prisma.user.findUnique({
+  return prisma.user.findUnique({
     where: { id: userId },
     include: {
       interests: {
@@ -14,7 +14,7 @@ const getUserInterests = async (userId: string) => {
 };
 
 const isBookAlreadyRecommended = async (userId: string, bookId: string) => {
-  return await prisma.bookUser.findUnique({
+  return prisma.bookUser.findUnique({
     where: { userId_bookId: { userId, bookId } },
   });
 };
@@ -32,7 +32,6 @@ export const recommendBooksForUser = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Pegamos até 5 categorias diferentes que o usuário escolheu
     const interests = user.interests.map((i) => i.interest.name);
     const selectedCategories = interests.sort(() => 0.5 - Math.random()).slice(0, 5);
 
@@ -40,8 +39,7 @@ export const recommendBooksForUser = async (req: Request, res: Response): Promis
 
     for (const category of selectedCategories) {
       const book = await fetchBookRecommendations(category);
-
-      if (!book) continue; // Se não encontrar, passa para o próximo
+      if (!book) continue;
 
       let existingBook = await prisma.book.findUnique({ where: { id: book.bookId } });
 
@@ -58,9 +56,7 @@ export const recommendBooksForUser = async (req: Request, res: Response): Promis
         });
       }
 
-      // Verifica se o usuário já recebeu esse livro antes
-      const alreadyRecommended = await isBookAlreadyRecommended(user.id, existingBook.id);
-      if (!alreadyRecommended) {
+      if (!(await isBookAlreadyRecommended(user.id, existingBook.id))) {
         await prisma.bookUser.create({
           data: {
             userId: user.id,
@@ -71,7 +67,7 @@ export const recommendBooksForUser = async (req: Request, res: Response): Promis
         recommendedBooks.push(existingBook);
       }
 
-      if (recommendedBooks.length >= 5) break; // Garantimos que sejam no máximo 5 livros
+      if (recommendedBooks.length >= 5) break;
     }
 
     if (recommendedBooks.length === 0) {
@@ -81,7 +77,7 @@ export const recommendBooksForUser = async (req: Request, res: Response): Promis
 
     res.json(recommendedBooks);
   } catch (error) {
-    console.error(error);
+    console.error("❌ Erro ao buscar recomendações:", error);
     res.status(500).json({ error: "Erro ao buscar recomendações de livros" });
   }
 };
@@ -93,37 +89,36 @@ export const getUserBookRecommendations = async (req: Request, res: Response): P
       return;
     }
 
-    // 🔍 Busca os livros recomendados para o usuário
     let books = await prisma.bookUser.findMany({
       where: { userId: req.user.id },
       include: { book: true },
       orderBy: { createdAt: "desc" },
     });
 
-    // ✅ Se nenhum livro estiver recomendado, gera uma recomendação automática
     if (books.length === 0) {
       console.log("📌 Nenhum livro encontrado, solicitando recomendação...");
       await recommendBooksForUser(req, res);
       return;
     }
 
-    res.json(books.map((b) => ({
-      id: b.book.id,
-      title: b.book.title,
-      author: b.book.author,
-      coverUrl: b.book.coverUrl,
-      description: b.book.description,
-      link: b.book.link,
-      progress: b.progress,
-      streak: b.streak,
-      createdAt: b.createdAt,
-    })));
+    res.json(
+      books.map((b) => ({
+        id: b.book.id,
+        title: b.book.title,
+        author: b.book.author,
+        coverUrl: b.book.coverUrl,
+        description: b.book.description,
+        link: b.book.link,
+        progress: b.progress,
+        streak: b.streak,
+        createdAt: b.createdAt,
+      }))
+    );
   } catch (error) {
     console.error("❌ Erro ao buscar livros:", error);
     res.status(500).json({ error: "Erro ao buscar livros recomendados" });
   }
 };
-
 
 export const updateReadingProgress = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -141,6 +136,7 @@ export const updateReadingProgress = async (req: Request, res: Response): Promis
 
     const bookUser = await prisma.bookUser.findUnique({
       where: { userId_bookId: { userId: req.user.id, bookId } },
+      include: { book: true }, // 🔹 Inclui informações do livro associado
     });
 
     if (!bookUser) {
@@ -148,11 +144,14 @@ export const updateReadingProgress = async (req: Request, res: Response): Promis
       return;
     }
 
+    // 🔹 Adiciona verificação para garantir que dailyGoal existe
+    const dailyGoal = bookUser.dailyGoal ?? 10; // Caso não exista, assume o valor padrão de 10 páginas
+
     const today = new Date().toISOString().split("T")[0];
     const lastReadDate = bookUser.lastReadAt ? bookUser.lastReadAt.toISOString().split("T")[0] : null;
 
     let streak = bookUser.streak;
-    if (progress >= bookUser.dailyGoal && lastReadDate !== today) {
+    if (progress >= dailyGoal && lastReadDate !== today) {
       streak += 1;
     }
 
@@ -172,7 +171,7 @@ export const updateReadingProgress = async (req: Request, res: Response): Promis
       lastReadAt: updatedBookUser.lastReadAt,
     });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Erro ao atualizar progresso de leitura:", error);
     res.status(500).json({ error: "Erro ao atualizar progresso de leitura" });
   }
 };
