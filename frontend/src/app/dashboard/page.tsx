@@ -7,6 +7,16 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { Home, BookOpen, LogOut } from "lucide-react";
 
+type Book = {
+  id: string;
+  title: string;
+  author: string;
+  coverUrl: string;
+  description: string;
+  link: string;
+  streak: number; // 🔥 Dias seguidos batendo meta
+};
+
 // 🔹 Busca capa do livro na Open Library API
 const getOpenLibraryCover = async (title: string) => {
   try {
@@ -23,7 +33,7 @@ const getOpenLibraryCover = async (title: string) => {
   } catch (error) {
     console.error("Erro ao buscar imagem na Open Library:", error);
   }
-  return "/placeholder-book.png"; // 🔹 Retorno padrão
+  return "/placeholder-book.png"; // 🔹 Retorno padrão caso não encontre a capa
 };
 
 export default function DashboardPage() {
@@ -31,18 +41,10 @@ export default function DashboardPage() {
   const [user, setUser] = useState<{ name: string; email: string } | null>(
     null
   );
-  const [books, setBooks] = useState<
-    {
-      id: string;
-      title: string;
-      author: string;
-      coverUrl: string;
-      description: string;
-      link: string;
-    }[]
-  >([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // 🚀 Função para buscar perfil do usuário
+  // 🚀 Busca perfil do usuário
   const fetchUserProfile = async () => {
     const token = getAuthToken();
     if (!token) {
@@ -56,9 +58,9 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Erro ao buscar usuário");
+      if (!response.ok) throw new Error("Erro ao buscar usuário");
 
+      const data = await response.json();
       setUser(data);
     } catch (err) {
       console.error("Erro ao buscar perfil:", err);
@@ -67,7 +69,7 @@ export default function DashboardPage() {
     }
   };
 
-  // 📚 Função para buscar livros recomendados
+  // 📚 Busca livros recomendados
   const fetchBooks = async () => {
     const token = getAuthToken();
     if (!token) return;
@@ -78,9 +80,11 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      let data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Erro ao buscar livros");
+      if (!response.ok) throw new Error("Erro ao buscar livros");
 
+      let data = await response.json();
+
+      // 🔹 Se não houver livros recomendados, solicita recomendação
       if (data.length === 0) {
         console.log("📌 Nenhum livro encontrado, solicitando recomendação...");
         response = await fetch(
@@ -91,17 +95,25 @@ export default function DashboardPage() {
           }
         );
 
-        data = await response.json();
-        if (!response.ok)
-          throw new Error(data.error || "Erro ao buscar recomendação");
+        if (!response.ok) throw new Error("Erro ao buscar recomendação");
 
-        console.log("✅ Livro recomendado automaticamente:", data);
-        setBooks([data]);
-      } else {
-        setBooks(data);
+        data = await response.json();
+        console.log("✅ Livros recomendados:", data);
       }
+
+      // 🔹 Atualiza imagens caso estejam ausentes
+      const booksWithCovers = await Promise.all(
+        data.map(async (book: Book) => ({
+          ...book,
+          coverUrl: book.coverUrl || (await getOpenLibraryCover(book.title)),
+        }))
+      );
+
+      setBooks(booksWithCovers);
     } catch (err) {
       console.error("❌ Erro ao buscar livros:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -112,6 +124,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-r from-[#B9895A] to-[#805533]">
+      {/* 🏠 Menu Lateral */}
       <aside className="w-64 bg-[#6D4C3D] text-white flex flex-col p-6 shadow-lg">
         <div className="flex items-center gap-3 mb-8">
           <img src="/logo-litera.png" alt="Logo Litera" className="w-12 h-12" />
@@ -137,6 +150,7 @@ export default function DashboardPage() {
         </nav>
       </aside>
 
+      {/* 📖 Conteúdo */}
       <main className="flex-1 flex flex-col items-center justify-start p-6">
         <motion.div
           initial={{ opacity: 0, y: 50 }}
@@ -152,9 +166,14 @@ export default function DashboardPage() {
           </p>
         </motion.div>
 
-        <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {books.length > 0 ? (
-            books.map((book, index) => (
+        {/* 📚 Lista de Livros Recomendados */}
+        {loading ? (
+          <p className="text-center text-[#6D4C3D] text-lg">
+            Carregando livros...
+          </p>
+        ) : books.length > 0 ? (
+          <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {books.map((book, index) => (
               <motion.div
                 key={book.id || `book-${index}`}
                 initial={{ opacity: 0, y: 20 }}
@@ -164,22 +183,23 @@ export default function DashboardPage() {
               >
                 <Link href={`/books/${book.id}`}>
                   <img
-                    src={book.coverUrl || "/placeholder-book.png"}
+                    src={book.coverUrl}
                     alt={book.title}
                     className="w-full h-64 object-cover"
                   />
                 </Link>
                 <div className="p-4">
                   <h2 className="text-xl font-bold text-[#6D4C3D]">
-                    {book.title || "Título não disponível"}
+                    {book.title}
                   </h2>
-                  <p className="text-sm text-[#805533]">
-                    Autor: {book.author || "Autor desconhecido"}
-                  </p>
+                  <p className="text-sm text-[#805533]">Autor: {book.author}</p>
                   <p className="text-sm text-[#6D4C3D] mt-2">
                     {book.description
                       ? `${book.description.substring(0, 100)}...`
                       : "Descrição não disponível"}
+                  </p>
+                  <p className="text-lg text-[#6D4C3D] mt-2">
+                    Dias seguidos batendo meta: <strong>{book.streak}🔥</strong>
                   </p>
                   <Link href={`/books/${book.id}`}>
                     <button className="w-full mt-3 text-center text-white bg-[#B9895A] hover:bg-[#805533] py-2 px-4 rounded-md">
@@ -188,13 +208,13 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               </motion.div>
-            ))
-          ) : (
-            <p className="text-center text-[#6D4C3D] text-lg">
-              Nenhum livro recomendado ainda.
-            </p>
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-[#6D4C3D] text-lg">
+            Nenhum livro recomendado ainda.
+          </p>
+        )}
       </main>
     </div>
   );

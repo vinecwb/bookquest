@@ -15,6 +15,7 @@ model User {
   createdAt DateTime       @default(now())
   books     BookUser[]
   interests UserInterest[]
+  dailyGoal Int            @default(10) // Meta diária de leitura (ex: 10 páginas)
 }
 
 model Book {
@@ -32,16 +33,15 @@ model BookUser {
   id         String    @id @default(uuid())
   userId     String
   bookId     String
-  progress   Int       @default(0) // 🔹 Número de páginas lidas
-  streak     Int       @default(0) // 🔹 Dias consecutivos de leitura
-  dailyGoal  Int       @default(10) // 🔹 Meta diária de leitura (ex: 10 páginas)
-  lastReadAt DateTime? // 🔹 Último dia de leitura
+  progress   Int       @default(0)
+  streak     Int       @default(0)
+  dailyGoal  Int       @default(10)
+  lastReadAt DateTime?
   createdAt  DateTime  @default(now())
+  book       Book      @relation(fields: [bookId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
 
-  book Book @relation(fields: [bookId], references: [id])
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([userId, bookId]) // 🔹 Garante que cada usuário tenha um único registro por livro
+  @@unique([userId, bookId])
 }
 
 model Interest {
@@ -58,5 +58,5 @@ model UserInterest {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, interestId]) // 🔹 Garante que o usuário não repita interesses
+  @@unique([userId, interestId])
 }
