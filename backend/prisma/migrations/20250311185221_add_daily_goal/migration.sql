@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "BookUser" ADD COLUMN     "dailyGoal" INTEGER NOT NULL DEFAULT 10,
+ADD COLUMN     "lastReadAt" TIMESTAMP(3);
